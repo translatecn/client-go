@@ -19,8 +19,12 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
+	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/util/homedir"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -57,11 +61,14 @@ func main() {
 	var leaseLockName string
 	var leaseLockNamespace string
 	var id string
-
-	flag.StringVar(&kubeconfig, "kubeconfig", "", "absolute path to the kubeconfig file")
+	if home := homedir.HomeDir(); home != "" {
+		flag.StringVar(&kubeconfig, "kubeconfig", filepath.Join(home, ".kube", "config"), "(optional) absolute path to the kubeconfig file")
+	} else {
+		flag.StringVar(&kubeconfig, "kubeconfig", "", "absolute path to the kubeconfig file")
+	}
 	flag.StringVar(&id, "id", uuid.New().String(), "the holder identity name")
-	flag.StringVar(&leaseLockName, "lease-lock-name", "", "the lease lock resource name")
-	flag.StringVar(&leaseLockNamespace, "lease-lock-namespace", "", "the lease lock resource namespace")
+	flag.StringVar(&leaseLockName, "lease-lock-name", "lease-lock-name", "the lease lock resource name")
+	flag.StringVar(&leaseLockNamespace, "lease-lock-namespace", "default", "the lease lock resource namespace")
 	flag.Parse()
 
 	if leaseLockName == "" {
@@ -107,6 +114,7 @@ func main() {
 
 	// we use the Lease lock type since edits to Leases are less common
 	// and fewer objects in the cluster watch "all Leases".
+	rc := record.NewFakeRecorder(10)
 	lock := &resourcelock.LeaseLock{
 		LeaseMeta: metav1.ObjectMeta{
 			Name:      leaseLockName,
@@ -114,10 +122,15 @@ func main() {
 		},
 		Client: client.CoordinationV1(),
 		LockConfig: resourcelock.ResourceLockConfig{
-			Identity: id,
+			Identity:      id,
+			EventRecorder: rc,
 		},
 	}
-
+	go func() {
+		for {
+			fmt.Println(<-rc.Events)
+		}
+	}()
 	// start the leader election code loop
 	leaderelection.RunOrDie(ctx, leaderelection.LeaderElectionConfig{
 		Lock: lock,
@@ -151,5 +164,6 @@ func main() {
 				klog.Infof("new leader elected: %s", identity)
 			},
 		},
+		WatchDog: leaderelection.NewLeaderHealthzAdaptor(time.Second * 3),
 	})
 }

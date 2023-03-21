@@ -148,8 +148,8 @@ func main() {
 	var kubeconfig string
 	var master string
 
-	flag.StringVar(&kubeconfig, "kubeconfig", "", "absolute path to the kubeconfig file")
-	flag.StringVar(&master, "master", "", "master url")
+	flag.StringVar(&kubeconfig, "kubeconfig", "/Users/acejilam/.kube/config", "absolute path to the kubeconfig file")
+	flag.StringVar(&master, "master", "https://127.0.0.1:57467", "master url")
 	flag.Parse()
 
 	// creates the connection

@@ -176,13 +176,13 @@ type LeaderCallbacks struct {
 type LeaderElector struct {
 	config LeaderElectionConfig
 	// internal bookkeeping
-	observedRecord    rl.LeaderElectionRecord
+	observedRecord    rl.LeaderElectionRecord // 每次get获得的信息
 	observedRawRecord []byte
 	observedTime      time.Time
 	// used to implement OnNewLeader(), may lag slightly from the
 	// value observedRecord.HolderIdentity if the transition has
 	// not yet been reported.
-	reportedLeader string
+	reportedLeader string // 自己保存的leader
 
 	// clock is wrapper around time to allow for less flaky testing
 	clock clock.Clock
@@ -200,7 +200,7 @@ func (le *LeaderElector) Run(ctx context.Context) {
 	defer runtime.HandleCrash()
 	defer le.config.Callbacks.OnStoppedLeading()
 
-	if !le.acquire(ctx) {
+	if !le.acquire(ctx) { // ✅
 		return // ctx signalled done
 	}
 	ctx, cancel := context.WithCancel(ctx)
@@ -243,7 +243,7 @@ func (le *LeaderElector) acquire(ctx context.Context) bool {
 	succeeded := false
 	desc := le.config.Lock.Describe()
 	klog.Infof("attempting to acquire leader lease %v...", desc)
-	wait.JitterUntil(func() {
+	wait.JitterUntil(func() { // ✅
 		succeeded = le.tryAcquireOrRenew(ctx)
 		le.maybeReportTransition()
 		if !succeeded {
@@ -337,21 +337,22 @@ func (le *LeaderElector) tryAcquireOrRenew(ctx context.Context) bool {
 		return true
 	}
 
-	// 2. Record obtained, check the Identity & Time
+	// 2. 已取得的记录，核对身份及时间
 	if !bytes.Equal(le.observedRawRecord, oldLeaderElectionRawRecord) {
 		le.setObservedRecord(oldLeaderElectionRecord)
 
 		le.observedRawRecord = oldLeaderElectionRawRecord
 	}
 	if len(oldLeaderElectionRecord.HolderIdentity) > 0 &&
-		le.observedTime.Add(time.Second*time.Duration(oldLeaderElectionRecord.LeaseDurationSeconds)).After(now.Time) &&
+		le.observedTime.Add( // 当前时间
+			time.Second*time.Duration(oldLeaderElectionRecord.LeaseDurationSeconds),
+		).After(now.Time) && // 没过期
 		!le.IsLeader() {
 		klog.V(4).Infof("lock is held by %v and has not yet expired", oldLeaderElectionRecord.HolderIdentity)
 		return false
 	}
 
-	// 3. We're going to try to update. The leaderElectionRecord is set to it's default
-	// here. Let's correct it before updating.
+	// 3. 我们将尝试更新。这里的leaderElectionRecord设置为默认值。让我们在更新之前纠正它。
 	if le.IsLeader() {
 		leaderElectionRecord.AcquireTime = oldLeaderElectionRecord.AcquireTime
 		leaderElectionRecord.LeaderTransitions = oldLeaderElectionRecord.LeaderTransitions
@@ -370,6 +371,7 @@ func (le *LeaderElector) tryAcquireOrRenew(ctx context.Context) bool {
 }
 
 func (le *LeaderElector) maybeReportTransition() {
+	// 最新的持有者
 	if le.observedRecord.HolderIdentity == le.reportedLeader {
 		return
 	}

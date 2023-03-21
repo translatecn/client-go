@@ -21,6 +21,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"k8s.io/klog/v2"
+	"time"
 
 	coordinationv1 "k8s.io/api/coordination/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -40,6 +42,8 @@ type LeaseLock struct {
 // Get returns the election record from a Lease spec
 func (ll *LeaseLock) Get(ctx context.Context) (*LeaderElectionRecord, []byte, error) {
 	lease, err := ll.Client.Leases(ll.LeaseMeta.Namespace).Get(ctx, ll.LeaseMeta.Name, metav1.GetOptions{})
+	klog.Infof("get lease %s %d", ll.LeaseMeta.Name, time.Now().Unix())
+
 	if err != nil {
 		return nil, nil, err
 	}
